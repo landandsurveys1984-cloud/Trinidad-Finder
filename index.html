@@ -1,108 +1,135 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Trinidad Region Finder</title>
+    <title>Trinidad Ward & Borough Finder</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+    
+    <script src="eglobals.js"></script>
 
     <style>
-        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
-        #controls { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px; border: 1px solid #ddd; }
-        input { padding: 10px; width: 140px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 5px; }
-        button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #218838; }
-        #map { height: 600px; border-radius: 8px; border: 2px solid #ddd; }
-        .result-box { margin-top: 15px; font-size: 1.2em; min-height: 1.5em; }
-        .success { color: #28a745; font-weight: bold; }
-        .error { color: #dc3545; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f0f2f5; }
+        #controls { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h3 { margin-top: 0; color: #333; }
+        input { padding: 12px; width: 160px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; margin-right: 10px; }
+        button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.3s; }
+        button:hover { background: #0056b3; }
+        #map { height: 550px; border-radius: 12px; border: 1px solid #ddd; }
+        #result { margin-top: 15px; font-size: 1.25em; font-weight: 600; color: #444; }
+        .highlight { color: #d9534f; }
     </style>
 </head>
 <body>
+
     <div id="controls">
-        <h3>Trinidad Boundary Search (UTM 20N)</h3>
-        <input type="number" id="easting" placeholder="Easting (m)">
-        <input type="number" id="northing" placeholder="Northing (m)">
+        <h3>Boundary Finder (WGS84 UTM 20N)</h3>
+        <input type="number" id="easting" placeholder="Easting (m)" value="640000">
+        <input type="number" id="northing" placeholder="Northing (m)" value="1120000">
         <button onclick="checkLocation()">Find Area</button>
-        <div id="result" class="result-box">Ready. Enter coordinates above.</div>
+        <div id="result">Enter coordinates to search...</div>
     </div>
+
     <div id="map"></div>
 
     <script>
-        // 1. UTM Zone 20N Definition
+        // 1. Projection Definitions
         const utm20n = "+proj=utm +zone=20 +datum=WGS84 +units=m +no_defs";
         const wgs84 = "+proj=longlat +datum=WGS84 +no_defs";
 
-        // 2. Setup Map
-        const map = L.map('map').setView([10.45, -61.2], 9);
+        // 2. Initialize Map
+        const map = L.map('map').setView([10.4, -61.2], 9);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
+            attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
         let boundaryData;
-        let marker;
+        let searchMarker;
 
-        // 3. Fetch Data
-        fetch('boundaries.json')
-            .then(res => {
-                if(!res.ok) throw new Error("File 'boundaries.json' not found.");
-                return res.json();
-            })
-            .then(data => {
-                boundaryData = data;
-                L.geoJSON(data, { 
-                    style: { color: "#007bff", weight: 1, fillOpacity: 0.1 } 
-                }).addTo(map);
-                console.log("Map data loaded successfully.");
-            })
-            .catch(err => {
-                document.getElementById('result').innerHTML = `<span class="error">${err.message}</span>`;
-            });
+        // 3. Convert eglobals.js Arrays to GeoJSON with Custom Naming
+        function loadWardsFromEglobals() {
+            let features = [];
 
-        // 4. Search Logic
-        function checkLocation() {
-            if (!boundaryData) return alert("Map is still loading...");
+            // TbName, TbLat, and TbLng come from eglobals.js
+            for (let i = 0; i < TbName.length; i++) {
+                let coords = [];
+                for (let j = 0; j < TbLat[i].length; j++) {
+                    // GeoJSON uses [Longitude, Latitude]
+                    coords.push([TbLng[i][j], TbLat[i][j]]);
+                }
+                // Close the polygon loop
+                coords.push([TbLng[i][0], TbLat[i][0]]);
 
-            const e = parseFloat(document.getElementById('easting').value);
-            const n = parseFloat(document.getElementById('northing').value);
-            
-            if (isNaN(e) || isNaN(n)) {
-                return alert("Please enter valid numbers for Easting and Northing.");
+                // APPLY CUSTOM RENAMING RULES
+                let rawName = TbName[i];
+                let finalName = rawName;
+
+                if (rawName === "Siparia") {
+                    finalName = "Borough of Siparia";
+                } else if (rawName === "Penal-Debe") {
+                    finalName = "Ward of Siparia";
+                }
+
+                features.push({
+                    "type": "Feature",
+                    "properties": { "name": finalName },
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [coords]
+                    }
+                });
             }
 
-            // Convert UTM to Lat/Long
-            const lngLat = proj4(utm20n, wgs84, [e, n]);
-            const pt = turf.point(lngLat);
+            return { "type": "FeatureCollection", "features": features };
+        }
 
-            let match = null;
+        // 4. Load Data onto Map
+        try {
+            boundaryData = loadWardsFromEglobals();
+            L.geoJSON(boundaryData, {
+                style: { color: "#ff7800", weight: 2, opacity: 0.65, fillOpacity: 0.2 },
+                onEachFeature: function (feature, layer) {
+                    layer.bindPopup(feature.properties.name);
+                }
+            }).addTo(map);
+            console.log("Wards loaded successfully from eglobals.js");
+        } catch (err) {
+            console.error("Error loading eglobals.js:", err);
+            document.getElementById('result').innerHTML = "Error: Could not find eglobals.js data.";
+        }
+
+        // 5. Point-in-Polygon Search Function
+        function checkLocation() {
+            const easting = parseFloat(document.getElementById('easting').value);
+            const northing = parseFloat(document.getElementById('northing').value);
+
+            // Convert UTM Input to Lat/Long
+            const coords = proj4(utm20n, wgs84, [easting, northing]);
+            const pt = turf.point(coords);
+
+            let foundArea = "Coordinate is outside of mapped areas.";
             
-            turf.featureEach(boundaryData, (f) => {
-                if (turf.booleanPointInPolygon(pt, f)) {
-                    match = f.properties.NAME_1;
+            // Check each ward polygon
+            turf.featureEach(boundaryData, function (currentFeature) {
+                if (turf.booleanPointInPolygon(pt, currentFeature)) {
+                    foundArea = "Location: <span class='highlight'>" + currentFeature.properties.name + "</span>";
                 }
             });
 
-            const resultDiv = document.getElementById('result');
-            if (match) {
-                resultDiv.innerHTML = `Location Found: <span class="success">${match}</span>`;
-            } else {
-                resultDiv.innerHTML = `<span class="error">Coordinates fall outside of Trinidad boundaries.</span>`;
-            }
+            // Update UI
+            document.getElementById('result').innerHTML = foundArea;
 
-            // Update Map Marker
-            if (marker) map.removeLayer(marker);
-            marker = L.marker([lngLat[1], lngLat[0]]).addTo(map)
-                .bindPopup(match ? match : "Outside Boundaries")
-                .openPopup();
+            // Place Marker and Zoom
+            if (searchMarker) map.removeLayer(searchMarker);
+            searchMarker = L.marker([coords[1], coords[0]]).addTo(map)
+                .bindPopup(foundArea).openPopup();
             
-            map.setView([lngLat[1], lngLat[0]], 13);
+            map.setView([coords[1], coords[0]], 13);
         }
     </script>
 </body>
