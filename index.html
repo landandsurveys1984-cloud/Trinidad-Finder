@@ -8,57 +8,94 @@
     <script src="https://unpkg.com/turf@6/turf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; margin: 20px; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
         #controls { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px; border: 1px solid #ddd; }
-        input { padding: 10px; width: 140px; border: 1px solid #ccc; border-radius: 4px; }
+        input { padding: 10px; width: 140px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 5px; }
         button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        #map { height: 600px; border-radius: 8px; }
-        .result-box { margin-top: 10px; font-size: 1.2em; color: #333; }
+        button:hover { background: #218838; }
+        #map { height: 600px; border-radius: 8px; border: 2px solid #ddd; }
+        .result-box { margin-top: 15px; font-size: 1.2em; min-height: 1.5em; }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; }
     </style>
 </head>
 <body>
     <div id="controls">
-        <h3>Enter UTM 20N Coordinates</h3>
+        <h3>Trinidad Boundary Search (UTM 20N)</h3>
         <input type="number" id="easting" placeholder="Easting (m)">
         <input type="number" id="northing" placeholder="Northing (m)">
         <button onclick="checkLocation()">Find Area</button>
-        <div id="result" class="result-box">Result will appear here...</div>
+        <div id="result" class="result-box">Ready. Enter coordinates above.</div>
     </div>
     <div id="map"></div>
 
     <script>
-        // UTM Zone 20N Definition
+        // 1. UTM Zone 20N Definition
         const utm20n = "+proj=utm +zone=20 +datum=WGS84 +units=m +no_defs";
         const wgs84 = "+proj=longlat +datum=WGS84 +no_defs";
 
+        // 2. Setup Map
         const map = L.map('map').setView([10.45, -61.2], 9);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
 
         let boundaryData;
+        let marker;
+
+        // 3. Fetch Data
         fetch('boundaries.json')
-            .then(res => res.json())
+            .then(res => {
+                if(!res.ok) throw new Error("File 'boundaries.json' not found.");
+                return res.json();
+            })
             .then(data => {
                 boundaryData = data;
-                L.geoJSON(data, { style: { color: "#007bff", weight: 1, fillOpacity: 0.2 } }).addTo(map);
+                L.geoJSON(data, { 
+                    style: { color: "#007bff", weight: 1, fillOpacity: 0.1 } 
+                }).addTo(map);
+                console.log("Map data loaded successfully.");
+            })
+            .catch(err => {
+                document.getElementById('result').innerHTML = `<span class="error">${err.message}</span>`;
             });
 
+        // 4. Search Logic
         function checkLocation() {
+            if (!boundaryData) return alert("Map is still loading...");
+
             const e = parseFloat(document.getElementById('easting').value);
             const n = parseFloat(document.getElementById('northing').value);
             
-            // Convert UTM to Lat/Long for the map
+            if (isNaN(e) || isNaN(n)) {
+                return alert("Please enter valid numbers for Easting and Northing.");
+            }
+
+            // Convert UTM to Lat/Long
             const lngLat = proj4(utm20n, wgs84, [e, n]);
             const pt = turf.point(lngLat);
 
-            let match = "Not found within any region.";
+            let match = null;
+            
             turf.featureEach(boundaryData, (f) => {
                 if (turf.booleanPointInPolygon(pt, f)) {
-                    match = "This falls within: " + f.properties.NAME_1;
+                    match = f.properties.NAME_1;
                 }
             });
 
-            document.getElementById('result').innerHTML = `<b>${match}</b>`;
-            L.marker([lngLat[1], lngLat[0]]).addTo(map).bindPopup(match).openPopup();
+            const resultDiv = document.getElementById('result');
+            if (match) {
+                resultDiv.innerHTML = `Location Found: <span class="success">${match}</span>`;
+            } else {
+                resultDiv.innerHTML = `<span class="error">Coordinates fall outside of Trinidad boundaries.</span>`;
+            }
+
+            // Update Map Marker
+            if (marker) map.removeLayer(marker);
+            marker = L.marker([lngLat[1], lngLat[0]]).addTo(map)
+                .bindPopup(match ? match : "Outside Boundaries")
+                .openPopup();
+            
             map.setView([lngLat[1], lngLat[0]], 13);
         }
     </script>
